@@ -6,37 +6,41 @@ on:
       - 'QtScrcpy/**'
       - '!QtScrcpy/res/**'
       - '.github/workflows/windows.yml'
+      - 'ci/win**'
   pull_request:
     paths:
       - 'QtScrcpy/**'
       - '!QtScrcpy/res/**'
       - '.github/workflows/windows.yml'
+      - 'ci/win**'
 jobs:
   build:
     name: Build
-    # windows-latest目前是windows server 2019,选择2016是2016安装的是vs2017
+    # windows-latest目前是windows server 2019
+    # windows server 2019安装的是vs2019，windows server 2016安装的是vs2017
     # https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idruns-on
-    runs-on: windows-2016
+    runs-on: windows-2019
 
     # 矩阵配置 https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idstrategymatrix
     strategy:
       matrix:
-        qt-ver: [5.12.6]
-        qt-arch: [win64_msvc2017_64, win32_msvc2017]
+        qt-ver: [5.15.1]
+        qt-arch: [win64_msvc2019_64, win32_msvc2019]
         # 配置qt-arch的额外设置msvc-arch，qt-arch-install
         include:
-          - qt-arch: win64_msvc2017_64
+          - qt-arch: win64_msvc2019_64
             msvc-arch: x64
-            qt-arch-install: msvc2017_64
-          - qt-arch: win32_msvc2017
+            qt-arch-install: msvc2019_64
+          - qt-arch: win32_msvc2019
             msvc-arch: x86
-            qt-arch-install: msvc2017
+            qt-arch-install: msvc2019
     # job env,所有steps都可以访问
     # 不同级别env详解 https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#env
     # 使用表达式语法${{}}访问上下文 https://help.github.com/en/actions/reference/context-and-expression-syntax-for-github-actions
     env:
       target-name: QtScrcpy
-      vcvarsall-path: 'C:\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise\VC\Auxiliary\Build\vcvarsall.bat'
+      vcvarsall-path: 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat'
+      vcinstall-path: 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC'
       qt-install-path: ${{ github.workspace }}/${{ matrix.qt-ver }}
       plantform-des: win
     # 步骤
@@ -50,7 +54,7 @@ jobs:
       # 安装Qt
       - name: Install Qt
         # 使用外部action。这个action专门用来安装Qt
-        uses: jurplel/install-qt-action@v2.0.0
+        uses: jurplel/install-qt-action@v2.13.0
         with:
           # Version of Qt to install
           version: ${{ matrix.qt-ver }}
@@ -60,9 +64,11 @@ jobs:
           arch: ${{ matrix.qt-arch }}
           cached: ${{ steps.cache-qt.outputs.cache-hit }}
       # 拉取代码
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
         with:
-          fetch-depth: 1
+          fetch-depth: 0
+          submodules: 'true'
+          ssh-key: ${{ secrets.BOT_SSH_KEY }}
       # 编译msvc
       - name: Build MSVC
         # shell介绍 https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#using-a-specific-shell
@@ -72,7 +78,7 @@ jobs:
           ENV_QT_PATH: ${{ env.qt-install-path }}
         run: |
           call python ci\generate-version.py
-          call "ci\win\build_for_win.bat" release ${{ matrix.msvc-arch }}
+          call "ci\win\build_for_win.bat" RelWithDebInfo ${{ matrix.msvc-arch }}
       # 获取ref最后一个/后的内容
       - name: Get the version
         shell: bash
@@ -83,6 +89,8 @@ jobs:
       - name: Package
         id: package
         env:
+          ENV_VCVARSALL: ${{ env.vcvarsall-path }}
+          ENV_VCINSTALL: ${{ env.vcinstall-path }}
           ENV_QT_PATH: ${{ env.qt-install-path }}
           publish_name: ${{ env.target-name }}-${{ env.plantform-des }}-${{ matrix.msvc-arch }}-${{ steps.get-version.outputs.version }}
         run: |
